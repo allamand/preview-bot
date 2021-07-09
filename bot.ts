@@ -288,7 +288,7 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
         body: 'I successfully cleaned up the preview stack',
       });
     } else {
-      console.debug('cleanupPreviewStack[pr' + prNumber + '] - TheStack failed to delete);    
+      console.debug('cleanupPreviewStack[pr' + prNumber + '] - TheStack failed to delete');    
       await octokit.issues.createComment({
         owner,
         repo,
