@@ -164,7 +164,7 @@ async function provisionPreviewStack(owner: string, repo: string, prNumber: numb
         console.debug('provisionPreviewStack[pr' + prNumber + '] - wait for update');
         await cloudformation.waitFor('stackUpdateComplete', { StackName: uniqueId }).promise();
       } catch (err) {
-        if (!err.message.endsWith('No Updates Are To Be Performed.')) {          
+        if (!err.message.endsWith('No Updates Are To Be Performed.')) {
           throw err;
         }
       }
@@ -227,7 +227,7 @@ async function provisionPreviewStack(owner: string, repo: string, prNumber: numb
  * Tear down when the pull request is closed
  */
 async function cleanupPreviewStack(owner: string, repo: string, prNumber: number) {
-  console.log('cleanupPreviewStack');
+  console.debug('cleanupPreviewStack[pr' + prNumber + ']');
   try {
     // Delete the stack
     const uniqueId = `${owner}-${repo}-pr-${prNumber}`;
@@ -247,7 +247,7 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
     }
 
     if (!stackExists) {
-      console.log('Ignoring because preview stack does not exist');
+      console.debug('cleanupPreviewStack[pr' + prNumber + '] - Ignoring because preview stack does not exist');
       return;
     }
 
@@ -258,6 +258,7 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
       body: 'Now that this pull request is closed, I will clean up the preview stack',
     });
 
+    console.debug('cleanupPreviewStack[pr' + prNumber + '] - delete stack');
     await cloudformation.deleteStack({ StackName: uniqueId }).promise();
     await cloudformation.waitFor('stackDeleteComplete', { StackName: uniqueId }).promise();
 
@@ -269,12 +270,12 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
           StackName: uniqueId,
         })
         .promise();
-      console.log('Stack status: ' + stackResponse.Stacks[0].StackStatus);
+      console.debug('cleanupPreviewStack[pr' + prNumber + '] - Stack status: ' + stackResponse.Stacks[0].StackStatus);
       stackExists = stackResponse.Stacks[0].StackStatus != 'DELETE_COMPLETE';
     } catch (err) {
       if (err.message.endsWith('does not exist')) {
         stackExists = false;
-      } else {
+      } else {        
         throw err;
       }
     }
@@ -287,7 +288,7 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
         body: 'I successfully cleaned up the preview stack',
       });
     } else {
-      console.error('TheStack failed to delete');
+      console.debug('cleanupPreviewStack[pr' + prNumber + '] - TheStack failed to delete);    
       await octokit.issues.createComment({
         owner,
         repo,
@@ -296,7 +297,7 @@ async function cleanupPreviewStack(owner: string, repo: string, prNumber: number
       });
     }
   } catch (err) {
-    console.log('cleanupPreviewStack - Error - ' + err.message);
+    console.debug('cleanupPreviewStack[pr' + prNumber + '] - Error - ' + err.message);    
   }
 }
 
