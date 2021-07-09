@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: 'AWS::Serverless-2016-10-31'
+
+Description: GitHub personal bot
+
+Parameters:
+  GitHubTokenParameter:
+    Description: Parameter Store parameter where encrypted GitHub OAuth Token is stored
+    Type: AWS::SSM::Parameter::Name
+    Default: preview-bot-github-token
+
+  BotUser:
+    Description: Github Bot User Name
+    Type: String
+    Default: preview-bot
+
+  WhitelistedUsers:
+    Description: White listed users splitted per commas
+    Type: String
+    Default: allamand
+
+  EcsClusterName:
+    Description: Name of the ECS cluster
+    Type: String
+    Default: container-demo
+
+  Vpc:
+    Description: ID of the default VPC (or other VPC with public subnets)
+    Type: AWS::EC2::VPC::Id
+
+  Subnets:
+    Description: Public subnets for the bot
+    Type: List<AWS::EC2::Subnet::Id>
+
+  BotEnabled:
+    Description: Whether the bot should be running
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
+Conditions:
+  IsBotEnabled: !Equals [!Ref BotEnabled, 'Yes']
+
+Resources:
+  BotImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref 'AWS::StackName'
+
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref 'AWS::StackName'
+      Cluster: !Ref EcsClusterName
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: !If [IsBotEnabled, 1, 0]
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref TaskSecurityGroup
+          Subnets: !Ref Subnets
+      TaskDefinition: !Ref 'TaskDefinition'
+
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Ref 'AWS::StackName'
+      ContainerDefinitions:
+        - Name: bot
+          Image:
+            'Fn::Join':
+              - ''
+              - - !Ref 'AWS::AccountId'
+                - .dkr.ecr.
+                - !Ref 'AWS::Region'
+                - .amazonaws.com/
+                - !Ref 'AWS::StackName'
+                - ':latest'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref Logs
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: 'bot-logs'
+          Environment:
+            - Name: botUser
+              Value: !Ref BotUser
+            - Name: whitelistedUsers
+              Value: !Ref WhitelistedUsers
+          Secrets:
+            - Name: githubToken
+              ValueFrom: !Ref GitHubTokenParameter
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn:
+        'Fn::GetAtt':
+          - TaskExecutionRole
+          - Arn
+      TaskRoleArn:
+        'Fn::GetAtt':
+          - TaskRole
+          - Arn
+
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Ref 'AWS::StackName'
+      RetentionInDays: 365
+
+  TaskSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Bot security group, no ingress, all egress
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: '-1'
+      SecurityGroupIngress: []
+      VpcId: !Ref Vpc
+
+  TaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess # Be able to provision any preview stack resources
+
+  TaskExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonSSMReadOnlyAccess
+
+  PreviewStackImageRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - '-preview-images'
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+              "rules": [
+                  {
+                      "rulePriority": 1,
+                      "description": "Expire images older than 14 days",
+                      "selection": {
+                          "tagStatus": "any",
+                          "countType": "sinceImagePushed",
+                          "countUnit": "days",
+                          "countNumber": 14
+                      },
+                      "action": {
+                          "type": "expire"
+                      }
+                  }
+              ]
+          }
+
+  PreviewStackBuildProject:
+    DependsOn:
+      - PreviewStackBuildPolicy
+    Properties:
+      Artifacts:
+        Location: !Ref 'ArtifactsBucket'
+        NamespaceType: BUILD_ID
+        Packaging: NONE
+        Type: S3
+      Description: !Join
+        - ''
+        - - 'CodeBuild Project for '
+          - !Ref 'AWS::StackName'
+      Environment:
+        ComputeType: BUILD_GENERAL1_LARGE
+        #Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        Image: aws/codebuild/nodejs:10.1.0
+        #aws/codebuild/nodejs:10.1.0
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      Name: !Ref 'AWS::StackName'
+      ServiceRole: !Ref 'PreviewStackBuildRole'
+      Source:
+        Type: GITHUB
+        Location: 'https://github.com/allamand/preview-bot.git'
+        Auth:
+          Type: OAUTH
+    Type: AWS::CodeBuild::Project
+
+  PreviewStackBuildRole:
+    Description: Creating service role in IAM for Amazon EC2 instances
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      Path: /
+      RoleName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - CodeBuild
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+        - arn:aws:iam::aws:policy/AmazonElasticContainerRegistryPublicPowerUser
+        - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+    Type: AWS::IAM::Role
+
+  PreviewStackBuildPolicy:
+    Description: Setting IAM policy for service role for CodeBuild
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - route53:ListHostedZonesByName
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Effect: Allow
+            Resource:
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref 'ArtifactsBucket'
+              - !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref 'ArtifactsBucket'
+                  - /*
+          - Action:
+              - kms:GenerateDataKey*
+              - kms:Encrypt
+              - kms:Decrypt
+            Effect: Allow
+            Resource:
+              - !Join
+                - ':'
+                - - arn:aws:kms
+                  - !Ref 'AWS::Region'
+                  - !Ref 'AWS::AccountId'
+                  - !Join
+                    - /
+                    - - alias
+                      - aws/s3
+      PolicyName: !Join
+        - '-'
+        - - !Ref 'AWS::StackName'
+          - PreviewStackBuildPolicy
+      Roles:
+        - !Ref 'PreviewStackBuildRole'
+    Type: AWS::IAM::Policy
+
+  ArtifactsBucket:
+    DeletionPolicy: Delete
+    Description: Amazon S3 bucket for CodeBuild artifacts
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - !Ref 'AWS::StackName'
+              - ArtifactsBucket
+      LifecycleConfiguration:
+        Rules:
+          - ExpirationInDays: 14
+            Status: Enabled
+    Type: AWS::S3::Bucket
