@@ -19,6 +19,11 @@ Parameters:
     Type: String
     Default: allamand
 
+  ImageTag:
+    Description: ECR docker image tag to uses for the preview-bot deployment
+    Type: String
+    Default: latest
+
   EcsClusterName:
     Description: Name of the ECS cluster
     Type: String
@@ -81,7 +86,7 @@ Resources:
                 - !Ref 'AWS::Region'
                 - .amazonaws.com/
                 - !Ref 'AWS::StackName'
-                - ':latest'
+                - !Ref 'AWS::ImageTag'
           LogConfiguration:
             LogDriver: awslogs
             Options:

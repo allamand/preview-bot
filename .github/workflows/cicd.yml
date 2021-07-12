@@ -1,0 +1,114 @@
+name: CI + CD
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  BOT_NAME: preview-bot
+  AWS_DEFAULT_REGION: eu-west-1
+  VPC_TAG_NAME: JenkinsKanikoStack/jenkins-vpc
+  CLUSTER_NAME: jenkins-cluster
+  WHITELIST_USER: allamand
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.BOT_NAME }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          echo $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  DeployProd:
+    name: Deploy to production
+    needs: [Build]
+    runs-on: ubuntu-latest
+
+    steps:
+      # - name: Create preview environment CloudFormation stack
+      #   id: eks-cluster
+      #   uses: aws-actions/aws-cloudformation-github-deploy@master
+      #   with:
+      #     name: ${{ steps.env-name.outputs.environment }}-cluster
+      #     template: https://s3.amazonaws.com/aws-quickstart/quickstart-amazon-eks/templates/amazon-eks-master.template.yaml
+      #     no-fail-on-empty-changeset: '1'
+      #     parameter-overrides: >-
+      #       AvailabilityZones=${{ github.event.inputs.region }}a,
+      #       AvailabilityZones=${{ github.event.inputs.region }}c,
+      #       KeyPairName=${{ github.event.inputs.keypair }},
+      #       NumberOfAZs=2,
+      #       ProvisionBastionHost=Disabled,
+      #       EKSPublicAccessEndpoint=Enabled,
+      #       EKSPrivateAccessEndpoint=Enabled,
+      #       RemoteAccessCIDR=0.0.0.0/0
+
+      - uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Configure environment name
+        id: env-name
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          ENVIRONMENT=`echo $REPO | tr "/" "-"`
+          echo "Environment name: $ENVIRONMENT"
+          echo "::set-output name=environment::$ENVIRONMENT"     
+          VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=${{ env.VPC_TAG_NAME }} | jq -r '.Vpcs[].VpcId')
+          echo $VPC_ID
+          echo "::set-output name=VPC_ID::$VPC_ID" 
+          SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:aws-cdk:subnet-type,Values=Public" --query 'Subnets[*].SubnetId' --output text | tr "\\t" ",")
+          echo $SUBNET_IDS             
+          echo "::set-output name=SUBNET_IDS::$SUBNET_IDS"
+
+      # - name: Create preview environment CloudFormation stack
+      #   id: cloudformation
+      #   uses: aws-actions/aws-cloudformation-github-deploy@master
+      #   with:
+      #     name: ${{ steps.env-name.outputs.environment }}-cluster
+      #     template: template.yml
+      #     no-fail-on-empty-changeset: '1'
+      #     parameter-overrides: >-
+      #       Vpc=${{ steps.env-name.outputs.VPC_ID }},
+      #       Subnets=${{ steps.env-name.outputs.SUBNET_IDS }},
+      #       EcsClusterName=${{ env.CLUSTER_NAME }},
+      #       BotUser=${{ env.BOT_NAME }},
+      #       WhitelistedUsers=${{ env.WHITELIST_USER }},
+      #       GitHubTokenParameter=preview-bot-github-token,
+      #       BotEnabled=Yes
+
+      - name: Create preview environment CloudFormation stack
+        run: aws cloudformation deploy --region ${{ env.AWS_DEFAULT_REGION }} --stack-name ${{ env.BOT_NAME }} --template-file template.yml --capabilities CAPABILITY_NAMED_IAM  --parameter-overrides Vpc=${{ steps.env-name.outputs.VPC_ID }} Subnets=${{ steps.env-name.outputs.SUBNET_IDS }} EcsClusterName=${{ env.CLUSTER_NAME }} BotUser=${{ env.BOT_NAME }} WhitelistedUsers=${{ env.WHITELIST_USER }} GitHubTokenParameter=preview-bot-github-token BotEnabled=Yes ImageTag=${{ env.IMAGE_TAG }}
