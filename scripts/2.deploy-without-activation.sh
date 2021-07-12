@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=ecsworkshop-base/BaseVPC | jq -r '.Vpcs[].VpcId')
+VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=$VPC_TAG_NAME | jq -r '.Vpcs[].VpcId')
 echo $VPC_ID
 
 #choose Public or private subnet ?
