@@ -67,7 +67,7 @@ async function provisionPreviewStack(owner: string, repo: string, prNumber: numb
         buildspecOverride: 'buildspec.yml',
         environmentVariablesOverride: [
           {
-            name: 'IMAGE_REPO_NAME',
+            name: 'ECR_REPOSITORY',
             value: ecrRepository,
           },
           {
