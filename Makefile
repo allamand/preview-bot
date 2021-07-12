@@ -17,3 +17,7 @@ deploy-activate:check
 local:
 	GITHUB_TOKEN=$(shell aws ssm get-parameter --name $$BOT_NAME-github-token --with-decryption --query 'Parameter.Value' --output text) && \
 	docker run --rm -v $$HOME/.aws:/root/.aws:ro -e AWS_REGION=$$AWS_REGION -e githubToken=$$GITHUB_TOKEN $$BOT_NAME
+
+docker-compose:
+	export GITHUB_TOKEN=$(shell aws ssm get-parameter --name $$BOT_NAME-github-token --with-decryption --query 'Parameter.Value' --output text) && \
+	docker-compose up

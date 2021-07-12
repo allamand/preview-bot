@@ -1,8 +1,8 @@
 ## preview-bot
 
-![](https://github.com/clareliguori/clare-bot/raw/master/assets/robot.png)
+![](https://github.com/allamand/preview-bot/raw/master/assets/robot.png)
 
-The preview-bot application polls for GitHub notifications like @preview-bot mentions and performs actions. 
+The preview-bot application polls for GitHub notifications like @preview-bot mentions and performs actions.
 
 For example, whitelisted GitHub users (namely, @allamand) can mention @preview-bot with a command "preview this" in a pull request to provision a preview environment.
 
@@ -27,7 +27,8 @@ VPC_TAG_NAME=JenkinsKanikoStack/jenkins-vpc
 
 Create an ssm parameter with the value of your domain certificat
 
-This is the certificat which will be uses to expose our services from the bot example:
+This is the certificat which will be use to expose our services from the bot example:
+
 ```bash
 aws ssm put-parameter --region $AWS_REGION --tags Key=project,Value=trivia --name CertificateArn-ecs.demo3.allamand.com --type String --value arn:aws:acm:...
 ```
@@ -35,6 +36,7 @@ aws ssm put-parameter --region $AWS_REGION --tags Key=project,Value=trivia --nam
 1. Create a GitHub user for your bot, like @preview-bot.
 
 2. Update the user's [notification settings](https://github.com/settings/notifications) to select:
+
 - **Automatically watch repositories**
 - Participating **Web and Mobile**
 - Watching **Web and Mobile**
@@ -44,24 +46,26 @@ aws ssm put-parameter --region $AWS_REGION --tags Key=project,Value=trivia --nam
 - `repo` (Full control of private repositories)
 - `notifications` (Access notifications)
 
- Store the token in AWS Systems Manager Parameter Store:
+Store the token in AWS Systems Manager Parameter Store:
 
- ```bash
- aws ssm put-parameter --region $AWS_REGION --name ${BOT_NAME}-github-token --type SecureString --value <YOUR_BOT_GITHUB_TOKEN>
- ```
+```bash
+aws ssm put-parameter --region $AWS_REGION --name ${BOT_NAME}-github-token --type SecureString --value <YOUR_BOT_GITHUB_TOKEN>
+```
 
 4. Invite the bot as a collaborator of your GitHub Repository.
- 
+
 5. Deploy the Bot
 
 You can deploy in default VPC or in the VPC of your choice by configuring the **VPC_TAG_NAME** env var, cf `./scripts/0.pre-requisite.sh` file
 
 Once the file is configured, you can source it
+
 ```bash
 source ./scripts/0.pre-requisite.sh
 ```
 
 Provision the stack in CloudFormation with the bot disabled:
+
 ```bash
 make deploy-without-activation
 ```
@@ -87,9 +91,8 @@ GITHUB_TOKEN=`aws ssm get-parameter --name ${BOT_NAME}-github-token --with-decry
 docker run --rm -v $HOME/.aws:/root/.aws:ro -e AWS_REGION=$AWS_REGION -e githubToken=$GITHUB_TOKEN $BOT_NAME
 ```
 
-
 # Crédit
 
-This works if derived from awsome work from Clare Liguory 
+This works if derived from awsome work from Clare Liguory
 
 https://github.com/clareliguori/clare-bot
