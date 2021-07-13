@@ -1,5 +1,7 @@
 ## preview-bot
 
+[![CI + CD](https://github.com/allamand/preview-bot/actions/workflows/cicd.yml/badge.svg)](https://github.com/allamand/preview-bot/actions/workflows/cicd.yml)
+
 ![](https://github.com/allamand/preview-bot/raw/master/assets/robot.png)
 
 The preview-bot application polls for GitHub notifications like @preview-bot mentions and performs actions.
