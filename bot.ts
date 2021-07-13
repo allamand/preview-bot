@@ -67,6 +67,10 @@ async function provisionPreviewStack(owner: string, repo: string, prNumber: numb
         buildspecOverride: 'buildspec.yml',
         environmentVariablesOverride: [
           {
+            name: 'DOMAIN_NAME',
+            value: uniqueId,
+          },          
+          {
             name: 'ECR_REPOSITORY',
             value: ecrRepository,
           },
