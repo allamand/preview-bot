@@ -109,6 +109,78 @@ GITHUB_TOKEN=`aws ssm get-parameter --name ${BOT_NAME}-github-token --with-decry
 docker run --rm -v $HOME/.aws:/root/.aws:ro -e AWS_REGION=$AWS_REGION -e githubToken=$GITHUB_TOKEN $BOT_NAME
 ```
 
+### Deploy the bot using Github Actions
+
+We can also automate the deployment of this bot using github-actions
+
+For doing that we need to provide aws credentials to the github actions so that they will be able to connect to the AWS APIs needed for our deployment.
+
+Github introduce a new way to integrates with AWS STS in order to retrieve temporary, short-lived credentials that can be used during the execution of the workflow. After that, the credentials will expire and no one will ever be able to use them again, preventing futur attacks in case of credentials leak at github action level.
+
+#### Create an OpenID Connect Identity provider
+
+The first step is to create an OpenId Connect (OIDC) identity provider in your AWS Account. This will aloow Githug to identify itself.
+
+- Go to the IAM console / Identity providers
+- Click Add new provider and select OpenID Connect
+- Provider Url: https://token.actions.githubusercontent.com (Don't forget to click Get Thumbprint)
+- Audience: sts.amazonaws.com
+
+> You need to do this step only once per AWS account.
+
+#### Create a role for Github Action
+
+Now we need to create a role that Github will be able to assume in order to access the resources it need to control.
+
+- Go back to IAM and select Roles
+- Create a new role
+- Chose Web Identity, select the Identity provider we created previously (tokens.actions.guthubusercontent.com), and its audience (sts.amazonaws.com)
+
+Then we need to fill policies: Keep in mind that you should always stick to the principle of least privileges.
+
+The GithubAction we are using needs some permissions:
+- https://github.com/aws-actions/amazon-ecr-login#permissions
+
+our script is also using some commands that needs additional permissions
+- aws ec2 describe-vpcs 
+- aws ec2 describe-subnets 
+- aws cloudformation deploy
+
+There is now an additional step to do. You need to edit the trust policy of the role to reduce its scope to your repository only. Make sure you don't skip this part, it is very important. Without that, any repository on GitHub will be able to assume your role and access your resources. (Unfortunately, there does not seem to be a way to do that at creation time).
+
+Under condition, add the following segment:
+```json
+"StringLike": {
+  "token.actions.githubusercontent.com:sub": "repo:[your-org]/[your-repo]:*"
+}
+```
+
+> You can also reduce the scope by using git reference, to a branch or tag, for example: `:ref:refs/heads/master`
+
+Final result look like:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::1234567890:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:[your-org]/[your-repo]:*"
+        }
+      }
+    }
+  ]
+}
+```
+
 # Crédit
 
 This works if derived from awsome work from Clare Liguory
