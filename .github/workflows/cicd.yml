@@ -1,13 +1,8 @@
 name: CI + CD
 
-#require for OIDC
-permissions:
-  id-token: write
-  contents: read
-
 on:
   push:
-    branches: [master]
+    branches: [master, oidc]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -22,6 +17,10 @@ env:
 
 jobs:
   Build:
+    name: Build application
+    permissions:
+      id-token: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -29,10 +28,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-duration-seconds: 900
-          #aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          #aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       - name: Login to Amazon ECR
@@ -56,6 +53,9 @@ jobs:
 
   DeployProd:
     name: Deploy to production
+    permissions:
+      id-token: write
+      contents: read    
     needs: [Build]
     runs-on: ubuntu-latest
 
@@ -65,10 +65,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-duration-seconds: 900        
-          #aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          #aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       - name: Configure environment
@@ -86,6 +84,7 @@ jobs:
           echo $SUBNET_IDS             
           echo "::set-output name=SUBNET_IDS::$SUBNET_IDS"
 
+      # Using Cloudfor;ation github action module
       # - name: Create preview environment CloudFormation stack
       #   id: cloudformation
       #   uses: aws-actions/aws-cloudformation-github-deploy@master
@@ -102,6 +101,7 @@ jobs:
       #       GitHubTokenParameter=preview-bot-github-token,
       #       BotEnabled=Yes
 
+      # Using Aws CLI
       - name: Create preview environment CloudFormation stack
         run: |
           aws cloudformation deploy --region ${{ env.AWS_DEFAULT_REGION }} \
@@ -116,7 +116,3 @@ jobs:
             GitHubTokenParameter=preview-bot-github-token \
             BotEnabled=Yes \
             ImageTag=${{ env.IMAGE_TAG }}
-
-      #No output on this stack
-      # - name: Retrieve preview environment URL
-      #   run: aws cloudformation describe-stacks --stack-name ${{ env.BOT_NAME }} --query 'Stacks[].Outputs[].OutputValue' | grep "http://"
