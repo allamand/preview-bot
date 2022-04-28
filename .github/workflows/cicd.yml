@@ -1,9 +1,6 @@
 name: CI + CD
 
-#require for OIDC
-permissions:
-  id-token: write
-  contents: write
+
 
 on:
   push:
@@ -22,6 +19,10 @@ env:
 
 jobs:
   Build:
+    #require for OIDC
+    permissions:
+      id-token: write
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
